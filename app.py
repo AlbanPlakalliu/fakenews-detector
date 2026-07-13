@@ -17,14 +17,14 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                               f1_score, confusion_matrix, roc_auc_score, roc_curve)
- 
+
 nltk.download('punkt',     quiet=True)
 nltk.download('stopwords', quiet=True)
 nltk.download('wordnet',   quiet=True)
 nltk.download('punkt_tab', quiet=True)
- 
+
 st.set_page_config(page_title="Fake News Detector", page_icon="🔍", layout="wide")
- 
+
 st.markdown("""
 <style>
 .hero {
@@ -42,14 +42,14 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
- 
+
 st.markdown("""
 <div class="hero">
     <h1>🔍 Fake News <span class="accent">Detector</span></h1>
     <p>Upload your datasets · Select models · Evaluate performance</p>
 </div>
 """, unsafe_allow_html=True)
- 
+
 with st.sidebar:
     st.markdown("### ⚙️ Configuration")
     uploaded_files = st.file_uploader(
@@ -62,11 +62,12 @@ with st.sidebar:
     use_lr  = st.checkbox("Logistic Regression",    value=True)
     use_svm = st.checkbox("Support Vector Machine", value=True)
     use_rf  = st.checkbox("Random Forest",          value=True)
+    use_xgb = st.checkbox("XGBoost",                value=False)
     test_size    = st.slider("Test Set Size (%)", 10, 40, 20) / 100
     max_features = st.select_slider("TF-IDF Max Features",
                                      options=[5000, 10000, 20000], value=10000)
     run_btn = st.button("🚀 Run Analysis")
- 
+
 @st.cache_data
 def preprocess(df):
     stop_words = set(stopwords.words('english'))
@@ -83,7 +84,7 @@ def preprocess(df):
     df['content']        = df['title'].fillna('') + ' ' + df['text'].fillna('')
     df['text_processed'] = df['content'].apply(clean)
     return df
- 
+
 def evaluate(name, y_test, y_pred, y_prob, color):
     acc  = accuracy_score(y_test, y_pred)
     prec = precision_score(y_test, y_pred, zero_division=0)
@@ -119,7 +120,7 @@ def evaluate(name, y_test, y_pred, y_prob, color):
                 st.pyplot(fig); plt.close()
     return dict(Model=name, Accuracy=acc, Precision=prec,
                 Recall=rec, F1=f1, AUC=auc, y_prob=y_prob)
- 
+
 if not uploaded_files:
     st.info("👈 Upload one or more CSV files from the sidebar to get started.")
     st.markdown("""
@@ -127,11 +128,11 @@ if not uploaded_files:
     | title | text | label |
     |-------|------|-------|
     | News title... | Article text... | 0 (real) or 1 (fake) |
- 
+
     💡 **You can upload multiple CSV files at once** — they will be automatically combined!
     """)
     st.stop()
- 
+
 dfs = []
 file_info = []
 for f in uploaded_files:
@@ -146,30 +147,30 @@ for f in uploaded_files:
                           'Fake': (df_temp['label']==1).sum()})
     except Exception as e:
         st.warning(f"Could not read {f.name}: {e}")
- 
+
 if not dfs:
     st.error("No valid files could be loaded.")
     st.stop()
- 
+
 df_raw = pd.concat(dfs, ignore_index=True)
 df_raw = df_raw.drop_duplicates(subset=['title']).reset_index(drop=True)
- 
+
 if len(uploaded_files) > 1:
     st.markdown('<div class="section-header">📁 Uploaded Files</div>', unsafe_allow_html=True)
     st.dataframe(pd.DataFrame(file_info), use_container_width=True, hide_index=True)
     st.success(f"✅ Combined {len(uploaded_files)} files → {len(df_raw):,} unique articles")
- 
+
 st.markdown('<div class="section-header">📊 Dataset Overview</div>', unsafe_allow_html=True)
 total = len(df_raw)
 real  = (df_raw['label']==0).sum()
 fake  = (df_raw['label']==1).sum()
- 
+
 c1,c2,c3,c4 = st.columns(4)
 c1.metric("Total Articles", f"{total:,}")
 c2.metric("Real (0)", f"{real:,}")
 c3.metric("Fake (1)", f"{fake:,}")
 c4.metric("Fake Ratio", f"{fake/total*100:.1f}%")
- 
+
 col_a, col_b = st.columns(2)
 with col_a:
     fig, ax = plt.subplots(figsize=(5,3.5))
@@ -184,16 +185,16 @@ with col_b:
         ax.barh(top.index[::-1], top.values[::-1], color='#0ea5e9')
         ax.set_title('Top Sources', fontweight='bold')
         st.pyplot(fig); plt.close()
- 
+
 if not run_btn:
     st.info("👈 Click **Run Analysis** to start training.")
     st.stop()
- 
+
 st.markdown('<div class="section-header">⚙️ Preprocessing Pipeline</div>', unsafe_allow_html=True)
 with st.spinner("Tokenising · Removing stopwords · Lemmatising..."):
     df_proc = preprocess(df_raw)
 st.success(f"✅ Preprocessed {len(df_proc):,} articles")
- 
+
 col1, col2 = st.columns(2)
 with col1:
     real_text = ' '.join(df_proc[df_proc['label']==0]['text_processed'].tolist())
@@ -213,7 +214,7 @@ with col2:
         ax.imshow(wc,interpolation='bilinear'); ax.axis('off')
         ax.set_title('Most Frequent Words — Fake News', fontweight='bold')
         st.pyplot(fig); plt.close()
- 
+
 st.markdown('<div class="section-header">🔢 Feature Extraction — TF-IDF</div>', unsafe_allow_html=True)
 with st.spinner("Vectorising with TF-IDF..."):
     tfidf = TfidfVectorizer(max_features=max_features, max_df=0.95, min_df=2)
@@ -223,7 +224,7 @@ with st.spinner("Vectorising with TF-IDF..."):
         X, y, test_size=test_size, random_state=42, stratify=y)
 st.success(f"✅ Matrix: {X.shape[0]:,} × {X.shape[1]:,} | "
            f"Train: {X_train.shape[0]:,} | Test: {X_test.shape[0]:,}")
- 
+
 st.markdown('<div class="section-header">🤖 Model Training & Evaluation</div>', unsafe_allow_html=True)
 models = []
 if use_lr:  models.append(("Logistic Regression",
@@ -232,11 +233,20 @@ if use_svm: models.append(("Support Vector Machine",
     CalibratedClassifierCV(LinearSVC(C=1.0,max_iter=2000,random_state=42)), '#ef4444'))
 if use_rf:  models.append(("Random Forest",
     RandomForestClassifier(n_estimators=200,random_state=42,n_jobs=-1), '#22c55e'))
- 
+if use_xgb:
+    try:
+        from xgboost import XGBClassifier
+        models.append(("XGBoost",
+            XGBClassifier(n_estimators=200, max_depth=6, learning_rate=0.1,
+                          eval_metric='logloss', random_state=42, n_jobs=-1),
+            '#f59e0b'))
+    except ImportError:
+        st.warning("XGBoost not available.")
+
 if not models:
     st.warning("Please select at least one model.")
     st.stop()
- 
+
 all_results = []
 for name, model, color in models:
     with st.spinner(f"Training {name}..."):
@@ -244,7 +254,7 @@ for name, model, color in models:
         y_pred = model.predict(X_test)
         y_prob = model.predict_proba(X_test)[:,1] if hasattr(model,'predict_proba') else None
     all_results.append(evaluate(name, y_test, y_pred, y_prob, color))
- 
+
 st.markdown('<div class="section-header">🏆 Model Comparison</div>', unsafe_allow_html=True)
 results_df = pd.DataFrame([{
     'Model':     r['Model'],
@@ -255,12 +265,12 @@ results_df = pd.DataFrame([{
     'ROC-AUC':   f"{r['AUC']:.4f}" if r['AUC'] else 'N/A'
 } for r in all_results])
 st.dataframe(results_df, use_container_width=True, hide_index=True)
- 
+
 best = max(all_results, key=lambda x: x['F1'])
 st.success(f"🥇 Best Model: **{best['Model']}** — "
            f"F1: {best['F1']*100:.2f}% | Accuracy: {best['Accuracy']*100:.2f}%")
- 
-colors = ['#3b82f6','#ef4444','#22c55e']
+
+colors = ['#3b82f6','#ef4444','#22c55e','#f59e0b']
 fig, ax = plt.subplots(figsize=(8,5))
 for i, r in enumerate(all_results):
     if r['y_prob'] is not None:
@@ -273,10 +283,9 @@ ax.set_xlabel('False Positive Rate')
 ax.set_ylabel('True Positive Rate')
 ax.legend(loc='lower right')
 st.pyplot(fig); plt.close()
- 
+
 st.markdown("---")
 st.markdown(
     "<center><small>Fake News Detector — LD7185 Programming for AI · Northumbria University</small></center>",
     unsafe_allow_html=True
 )
- 
